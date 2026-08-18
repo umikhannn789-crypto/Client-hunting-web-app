@@ -1,0 +1,10 @@
+{
+  "name": "leadhunter-pro",
+  "version": "1.0.0",
+  "description": "LeadHunter Pro - MERN Stack Lead Generation Platform",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node server/server.js"
+  }
+}
