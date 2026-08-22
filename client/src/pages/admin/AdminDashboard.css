@@ -1,5 +1,5 @@
 ﻿/* ========================================
-   ADMIN DASHBOARD - OLIVE/GREY THEME
+   ADMIN DASHBOARD - COMPLETE CSS
    ======================================== */
 
 .admin-dashboard {
@@ -9,9 +9,7 @@
   color: #f5f0ff;
 }
 
-/* ========================================
-   SIDEBAR
-   ======================================== */
+/* ===== SIDEBAR ===== */
 .admin-sidebar {
   width: 260px;
   min-height: 100vh;
@@ -162,9 +160,7 @@
   background: rgba(239, 68, 68, 0.1);
 }
 
-/* ========================================
-   MAIN CONTENT
-   ======================================== */
+/* ===== MAIN CONTENT ===== */
 .admin-main-content {
   flex: 1;
   padding: 24px 32px;
@@ -197,9 +193,7 @@
   margin: 4px 0 0 0;
 }
 
-/* ========================================
-   STATS GRID
-   ======================================== */
+/* ===== STATS GRID ===== */
 .admin-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -267,9 +261,7 @@
   margin: 4px 0 0 0;
 }
 
-/* ========================================
-   RECENT CARDS
-   ======================================== */
+/* ===== RECENT CARDS ===== */
 .admin-recent-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -355,9 +347,7 @@
   margin-right: 4px;
 }
 
-/* ========================================
-   RECENT LEADS
-   ======================================== */
+/* ===== RECENT LEADS ===== */
 .admin-recent-leads {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(124, 58, 237, 0.2);
@@ -423,9 +413,7 @@
 .lead-status-badge.qualified { background: rgba(20, 184, 166, 0.2); color: #2dd4bf; }
 .lead-status-badge.lost { background: rgba(239, 68, 68, 0.2); color: #f87171; }
 
-/* ========================================
-   TOOLBAR
-   ======================================== */
+/* ===== TOOLBAR ===== */
 .admin-toolbar {
   display: flex;
   justify-content: space-between;
@@ -470,9 +458,7 @@
   font-weight: 500;
 }
 
-/* ========================================
-   TABLE
-   ======================================== */
+/* ===== TABLE ===== */
 .admin-table-wrapper {
   overflow-x: auto;
   background: rgba(255, 255, 255, 0.04);
@@ -623,12 +609,10 @@
   color: #8b7aa8;
 }
 
-/* ========================================
-   LEADS GRID
-   ======================================== */
+/* ===== LEADS GRID ===== */
 .admin-leads-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
 }
 
@@ -638,6 +622,8 @@
   border-radius: 16px;
   padding: 20px;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .admin-lead-card:hover {
@@ -658,6 +644,14 @@
   font-weight: 600;
   margin: 0;
   color: #f5f0ff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-lead-header h3 i {
+  color: #a78bfa;
+  font-size: 14px;
 }
 
 .lead-status {
@@ -665,6 +659,7 @@
   border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .lead-status.new { background: rgba(124, 58, 237, 0.2); color: #a78bfa; }
@@ -672,27 +667,65 @@
 .lead-status.qualified { background: rgba(20, 184, 166, 0.2); color: #2dd4bf; }
 .lead-status.lost { background: rgba(239, 68, 68, 0.2); color: #f87171; }
 
+.admin-lead-body {
+  flex: 1;
+}
+
 .admin-lead-body p {
   font-size: 13px;
   color: #c4b5d4;
   margin: 6px 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+  word-break: break-word;
 }
 
-.admin-lead-body i {
+.admin-lead-body p i {
   width: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
   color: #8b7aa8;
 }
 
 .admin-lead-body a {
   color: #a78bfa;
   text-decoration: none;
+  word-break: break-all;
 }
 
 .admin-lead-body a:hover {
   text-decoration: underline;
+}
+
+/* ===== CLEAN WEBSITE LINKS ===== */
+.clean-website-link {
+  color: #a78bfa;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+  word-break: break-all;
+  transition: color 0.3s ease;
+  max-width: 200px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clean-website-link:hover {
+  color: #7c3aed;
+  text-decoration: underline;
+}
+
+.website-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.website-row i {
+  flex-shrink: 0;
 }
 
 .admin-lead-actions {
@@ -708,9 +741,7 @@
   justify-content: center;
 }
 
-/* ========================================
-   SETTINGS
-   ======================================== */
+/* ===== SETTINGS ===== */
 .admin-settings-card {
   max-width: 600px;
   margin: 0 auto;
@@ -834,9 +865,7 @@
   color: white;
 }
 
-/* ========================================
-   LOADING
-   ======================================== */
+/* ===== LOADING ===== */
 .admin-loading-container {
   display: flex;
   flex-direction: column;
@@ -861,9 +890,21 @@
   to { transform: rotate(360deg); }
 }
 
-/* ========================================
-   RESPONSIVE
-   ======================================== */
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f0a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #7c3aed;
+  border-radius: 10px;
+}
+
+/* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .admin-sidebar {
     width: 72px;

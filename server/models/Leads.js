@@ -48,9 +48,14 @@ const LeadSchema = new mongoose.Schema({
     type: String,
     default: 'google_maps'
   },
+  sourceUrl: {
+    type: String,
+    default: ''
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    required: true
   },
   isSaved: {
     type: Boolean,
@@ -63,7 +68,19 @@ const LeadSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
+}, {
+  timestamps: true
 });
+
+// ===== INDEXES FOR BETTER PERFORMANCE =====
+LeadSchema.index({ companyName: 1, city: 1 }, { unique: false });
+LeadSchema.index({ createdBy: 1, createdAt: -1 });
+LeadSchema.index({ industry: 1 });
+LeadSchema.index({ city: 1, country: 1 });
 
 module.exports = mongoose.model('Lead', LeadSchema);

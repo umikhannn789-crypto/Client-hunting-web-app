@@ -11,6 +11,7 @@ import './UserDashboard.css';
 const API_BASE = 'http://localhost:5002/api';
 
 const UserDashboard = () => {
+  // ===== STATE VARIABLES =====
   const [activeTab, setActiveTab] = useState('dashboard');
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,12 +21,14 @@ const UserDashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
 
+  // Password state
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
 
+  // Scraper form state
   const [scraperData, setScraperData] = useState({
     city: 'Lahore',
     country: 'Pakistan',
@@ -36,11 +39,13 @@ const UserDashboard = () => {
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
 
+  // Stats state
   const [stats, setStats] = useState({
     totalLeads: 0,
     savedLeads: 0,
     cities: 0,
-    emails: 0
+    emails: 0,
+    industries: 0
   });
 
   // ===== EFFECTS =====
@@ -60,12 +65,14 @@ const UserDashboard = () => {
       const saved = data.filter(l => l.isSaved);
       const cities = [...new Set(data.map(l => l.city).filter(Boolean))];
       const emails = data.filter(l => l.email).length;
+      const industries = [...new Set(data.map(l => l.industry).filter(Boolean))];
       
       setStats({
         totalLeads: data.length,
         savedLeads: saved.length,
         cities: cities.length,
-        emails: emails
+        emails: emails,
+        industries: industries.length
       });
     } catch (error) {
       console.error('❌ Fetch Error:', error);
@@ -84,6 +91,7 @@ const UserDashboard = () => {
     setScraperData({ ...scraperData, businessType: niche });
   };
 
+  // ===== RUN SCRAPER - SAVES ALL LEADS =====
   const runScraper = async () => {
     const { city, country, businessType, maxResults } = scraperData;
     
@@ -94,7 +102,7 @@ const UserDashboard = () => {
 
     setScraping(true);
     setScraperResults([]);
-    toast.loading('🌐 Scraping Google Maps...');
+    const loadingToast = toast.loading('🌐 Scraping Google Maps...');
 
     try {
       const response = await axios.post(`${API_BASE}/scraper/run`, {
@@ -106,37 +114,67 @@ const UserDashboard = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
+      toast.dismiss(loadingToast);
+
       if (response.data.success) {
-        toast.dismiss();
         const scrapedLeads = response.data.leads || [];
         
+        // Show all leads in live results
+        setScraperResults(scrapedLeads);
+        
+        // Save all leads to database
+        let savedCount = 0;
         toast.loading(`💾 Saving ${scrapedLeads.length} leads...`);
         
-        let savedCount = 0;
         for (let lead of scrapedLeads) {
           try {
-            const saveRes = await axios.post(`${API_BASE}/leads`, lead, {
+            // Check if lead already exists
+            const existing = await axios.get(`${API_BASE}/leads`, {
               headers: { Authorization: `Bearer ${token}` }
             });
-            if (saveRes.data.success) savedCount++;
+            const exists = existing.data.data.some(l => 
+              l.companyName === lead.companyName && 
+              l.city === lead.city
+            );
+            
+            if (!exists && lead.companyName && lead.companyName.trim()) {
+              await axios.post(`${API_BASE}/leads`, {
+                companyName: lead.companyName || 'Unknown',
+                email: lead.email || '',
+                phone: lead.phone || '',
+                website: lead.website || '',
+                industry: businessType,
+                status: 'new',
+                notes: lead.address || '',
+                city: lead.city || city,
+                country: lead.country || country || '',
+                rating: lead.rating || '',
+                source: 'google_maps',
+                createdBy: user.id
+              }, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              savedCount++;
+            } else {
+              savedCount++;
+            }
           } catch (e) {
             console.error("Save Error:", e);
           }
         }
         
         toast.dismiss();
-        setScraperResults(scrapedLeads);
+        await fetchLeads();
         toast.success(`✅ ${savedCount} leads saved to "My Leads"!`);
-        fetchLeads();
         setActiveTab('leads');
+        
       } else {
-        toast.dismiss();
         toast.error(response.data.message || 'Scraper failed');
       }
     } catch (error) {
-      toast.dismiss();
+      toast.dismiss(loadingToast);
       console.error('❌ Scraper Error:', error);
-      toast.error(error.response?.data?.message || 'Failed to scrape.');
+      toast.error(error.response?.data?.message || 'Failed to scrape. Please try again.');
     } finally {
       setScraping(false);
     }
@@ -167,12 +205,27 @@ const UserDashboard = () => {
     }
   };
 
+  const handleDeleteLead = async (leadId) => {
+    if (!window.confirm('⚠️ Are you sure you want to delete this lead?')) return;
+    try {
+      await axios.delete(`${API_BASE}/leads/${leadId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Lead deleted successfully');
+      fetchLeads();
+    } catch (error) {
+      toast.error('Failed to delete lead');
+    }
+  };
+
+  // ===== LOGOUT =====
   const handleLogout = () => {
     logout();
     navigate('/login');
     toast.success('Logged out');
   };
 
+  // ===== THEME TOGGLE =====
   const toggleTheme = () => {
     setIsDarkMode(!isDarkMode);
     document.body.classList.toggle('light-theme');
@@ -227,51 +280,99 @@ const UserDashboard = () => {
     }
   };
 
-  // ===== FILTER & EXPORT =====
+  // ===== FILTER =====
   const filteredLeads = leads.filter(lead =>
     lead.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     lead.industry?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     lead.city?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // ===== EXPORT PDF =====
   const exportPDF = () => {
     if (leads.length === 0) {
       toast.error('No leads to export');
       return;
     }
 
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text('LeadHunter - Leads Report', 14, 22);
-    doc.setFontSize(10);
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Total Leads: ${leads.length}`, 14, 36);
+    try {
+      const doc = new jsPDF();
+      let y = 20;
 
-    const tableColumn = ["Company", "Industry", "City", "Phone", "Email"];
-    const tableRows = [];
+      doc.setFillColor(124, 58, 237);
+      doc.rect(0, 0, 210, 35, 'F');
+      doc.setFontSize(20);
+      doc.setTextColor(255, 255, 255);
+      doc.text('📊 LeadHunter Report', 105, 18, { align: 'center' });
+      doc.setFontSize(9);
+      doc.setTextColor(200, 200, 220);
+      doc.text(new Date().toLocaleString(), 105, 28, { align: 'center' });
 
-    leads.forEach(lead => {
-      const leadData = [
-        lead.companyName || 'N/A',
-        lead.industry || 'N/A',
-        lead.city || 'N/A',
-        lead.phone || 'N/A',
-        lead.email || 'N/A'
-      ];
-      tableRows.push(leadData);
-    });
+      y = 45;
 
-    doc.autoTable({
-      head: [tableColumn],
-      body: tableRows,
-      startY: 42,
-      theme: 'grid',
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [124, 58, 237] }
-    });
+      const total = leads.length;
+      const saved = leads.filter(l => l.isSaved).length;
+      const countries = [...new Set(leads.map(l => l.country).filter(Boolean))].length;
 
-    doc.save('leads_export.pdf');
-    toast.success(`📄 Exported ${leads.length} leads to PDF!`);
+      doc.setFontSize(11);
+      doc.setTextColor(50, 50, 50);
+      doc.text(`📌 Total Leads: ${total}  |  ⭐ Saved: ${saved}  |  🌍 Countries: ${countries}`, 14, y);
+      y += 12;
+
+      const tableColumn = ["#", "Company", "Industry", "City", "Country", "Phone", "Email", "Status"];
+      const tableRows = [];
+
+      leads.forEach((lead, index) => {
+        const leadData = [
+          (index + 1).toString(),
+          (lead.companyName || 'N/A').substring(0, 25),
+          (lead.industry || 'N/A').substring(0, 15),
+          (lead.city || 'N/A').substring(0, 15),
+          (lead.country || 'N/A').substring(0, 12),
+          lead.phone || 'N/A',
+          (lead.email || 'N/A').substring(0, 20),
+          lead.status || 'New'
+        ];
+        tableRows.push(leadData);
+      });
+
+      doc.autoTable({
+        startY: y,
+        head: [tableColumn],
+        body: tableRows,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [124, 58, 237],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold'
+        },
+        bodyStyles: { fontSize: 8 },
+        columnStyles: {
+          0: { cellWidth: 10, halign: 'center' },
+          1: { cellWidth: 45 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 18 },
+          5: { cellWidth: 25 },
+          6: { cellWidth: 32 },
+          7: { cellWidth: 18, halign: 'center' }
+        },
+        didDrawPage: function(data) {
+          const pageCount = doc.internal.getNumberOfPages();
+          doc.setFontSize(7);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`Page ${data.pageNumber} of ${pageCount}`, 190, 285);
+          doc.text('LeadHunter Pro - Lead Generation Platform', 14, 285);
+        }
+      });
+
+      doc.save(`leads_report_${new Date().toISOString().slice(0,10)}.pdf`);
+      toast.success(`✅ ${leads.length} leads exported to PDF!`);
+      
+    } catch (error) {
+      console.error('PDF Error:', error);
+      toast.error('Failed to generate PDF. Please try again.');
+    }
   };
 
   // ===== ANALYTICS DATA =====
@@ -311,28 +412,127 @@ const UserDashboard = () => {
 
   const analytics = getAnalyticsData();
 
-  // ===== MODAL COMPONENT =====
+  // ===== CLEAN WEBSITE HELPER FUNCTIONS =====
+  const getCleanWebsite = (url) => {
+    if (!url) return 'N/A';
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace(/^www\./, '');
+    } catch {
+      return url.replace(/^https?:\/\//, '').replace(/www\./, '').split('/')[0];
+    }
+  };
+
+  const getWebsiteHref = (url) => {
+    if (!url) return '#';
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    return `https://${url}`;
+  };
+
+  // ===== MODAL COMPONENT (FULL DATA - EMAIL, PHONE, WEBSITE) =====
   const LeadDetailModal = ({ lead, onClose }) => {
     if (!lead) return null;
+
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content" onClick={(e) => e.stopPropagation()}>
           <button className="modal-close" onClick={onClose}>×</button>
-          <h2 className="modal-title"><i className="fa-solid fa-building"></i> {lead.companyName}</h2>
+          
+          <h2 className="modal-title">
+            <i className="fa-solid fa-building"></i> {lead.companyName || 'Unknown'}
+          </h2>
+          
           <div className="modal-body">
-            <div className="modal-row"><strong>Industry:</strong> {lead.industry || 'N/A'}</div>
-            <div className="modal-row"><strong>Email:</strong> {lead.email || 'N/A'}</div>
-            <div className="modal-row"><strong>Phone:</strong> {lead.phone || 'N/A'}</div>
-            <div className="modal-row"><strong>Website:</strong> {lead.website ? <a href={lead.website} target="_blank" rel="noopener noreferrer">{lead.website}</a> : 'N/A'}</div>
-            <div className="modal-row"><strong>Address:</strong> {lead.address || 'N/A'}</div>
-            <div className="modal-row"><strong>City/Country:</strong> {lead.city || 'N/A'}, {lead.country || 'N/A'}</div>
-            <div className="modal-row"><strong>Status:</strong> <span className={`status-badge ${lead.status}`}>{lead.status}</span></div>
+            {/* Industry */}
+            <div className="modal-row">
+              <strong>Industry:</strong>
+              <span>{lead.industry || 'N/A'}</span>
+            </div>
+            
+            {/* Email - SHOW IF AVAILABLE */}
+            <div className="modal-row">
+              <strong>Email:</strong>
+              <span className="modal-email">
+                {lead.email && lead.email !== 'N/A' && lead.email !== '' ? (
+                  <a href={`mailto:${lead.email}`} className="email-link">
+                    <i className="fa-solid fa-envelope"></i> {lead.email}
+                  </a>
+                ) : (
+                  'N/A'
+                )}
+              </span>
+            </div>
+            
+            {/* Phone - SHOW IF AVAILABLE */}
+            <div className="modal-row">
+              <strong>Phone:</strong>
+              <span className="modal-phone">
+                {lead.phone && lead.phone !== 'N/A' && lead.phone !== '' ? (
+                  <a href={`tel:${lead.phone}`} className="phone-link">
+                    <i className="fa-solid fa-phone"></i> {lead.phone}
+                  </a>
+                ) : (
+                  'N/A'
+                )}
+              </span>
+            </div>
+            
+            {/* Website - Clean domain only */}
+            <div className="modal-row website-row-modal">
+              <strong>Website:</strong>
+              {lead.website && lead.website !== 'N/A' && lead.website !== '' ? (
+                <a 
+                  href={getWebsiteHref(lead.website)} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="modal-website-link"
+                  title={lead.website}
+                >
+                  <i className="fa-solid fa-globe"></i> {getCleanWebsite(lead.website)}
+                </a>
+              ) : (
+                <span>N/A</span>
+              )}
+            </div>
+            
+            {/* Address */}
+            <div className="modal-row">
+              <strong>Address:</strong>
+              <span>{lead.address || 'N/A'}</span>
+            </div>
+            
+            {/* City/Country */}
+            <div className="modal-row">
+              <strong>City/Country:</strong>
+              <span>{lead.city || 'N/A'}{lead.country ? `, ${lead.country}` : ''}</span>
+            </div>
+            
+            {/* Status */}
+            <div className="modal-row">
+              <strong>Status:</strong>
+              <span className={`status-badge ${lead.status || 'new'}`}>
+                {lead.status || 'New'}
+              </span>
+            </div>
           </div>
+          
           <div className="modal-actions">
             {lead.isSaved ? (
-              <button onClick={() => { handleUnsaveLead(lead._id); onClose(); }} className="unsave-btn">Unsave</button>
+              <button 
+                onClick={() => { handleUnsaveLead(lead._id); onClose(); }} 
+                className="unsave-btn"
+              >
+                <i className="fa-solid fa-bookmark"></i> Unsave
+              </button>
             ) : (
-              <button onClick={() => { handleSaveLead(lead._id); onClose(); }} className="save-btn">Save</button>
+              <button 
+                onClick={() => { handleSaveLead(lead._id); onClose(); }} 
+                className="save-btn"
+              >
+                <i className="fa-regular fa-bookmark"></i> Save
+              </button>
             )}
             <button onClick={onClose} className="close-btn">Close</button>
           </div>
@@ -341,11 +541,12 @@ const UserDashboard = () => {
     );
   };
 
-  // ===== NAV ITEMS (Without Badge) =====
+  // ===== NAV ITEMS =====
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: 'fa-solid fa-gauge-high' },
     { id: 'scraper', label: 'Lead Scraper', icon: 'fa-solid fa-magnifying-glass-location' },
     { id: 'leads', label: 'My Leads', icon: 'fa-solid fa-users' },
+    { id: 'analytics', label: 'Analytics', icon: 'fa-solid fa-chart-line' },
     { id: 'settings', label: 'Settings', icon: 'fa-solid fa-sliders' }
   ];
 
@@ -378,6 +579,9 @@ const UserDashboard = () => {
             >
               <i className={item.icon}></i>
               <span>{item.label}</span>
+              {item.id === 'leads' && (
+                <span className="badge">{leads.filter(l => l.isSaved).length}</span>
+              )}
             </button>
           ))}
         </nav>
@@ -402,6 +606,7 @@ const UserDashboard = () => {
               {activeTab === 'dashboard' && `Welcome back, ${user?.name}!`}
               {activeTab === 'scraper' && '🌍 Find business leads from any country on Google Maps'}
               {activeTab === 'leads' && `📋 You have ${leads.filter(l => l.isSaved).length} saved leads`}
+              {activeTab === 'analytics' && '📊 Your lead generation insights'}
               {activeTab === 'settings' && '⚙️ Manage your account settings'}
             </p>
           </div>
@@ -432,12 +637,13 @@ const UserDashboard = () => {
                 <div className="illustration-circle"><i className="fa-solid fa-chart-simple"></i></div>
               </div>
             </div>
+
             <div className="stats-grid">
               <div className="stat-card glass-effect gradient-purple">
                 <div className="stat-icon"><i className="fa-solid fa-database"></i></div>
                 <div className="stat-info">
                   <h3>{stats.totalLeads}</h3>
-                  <p>Total Leads Found</p>
+                  <p>Total Leads</p>
                 </div>
               </div>
               <div className="stat-card glass-effect gradient-gold">
@@ -451,21 +657,24 @@ const UserDashboard = () => {
                 <div className="stat-icon"><i className="fa-solid fa-city"></i></div>
                 <div className="stat-info">
                   <h3>{stats.cities}</h3>
-                  <p>Cities Covered</p>
+                  <p>Cities</p>
                 </div>
               </div>
               <div className="stat-card glass-effect gradient-pink">
                 <div className="stat-icon"><i className="fa-solid fa-envelope"></i></div>
                 <div className="stat-info">
                   <h3>{stats.emails}</h3>
-                  <p>Emails Harvested</p>
+                  <p>Emails</p>
                 </div>
               </div>
             </div>
+
             <div className="recent-section">
               <div className="section-header">
-                <h2>📊 Recent Leads Activity</h2>
-                <button className="view-all-btn" onClick={() => setActiveTab('leads')}>View All <i className="fa-solid fa-arrow-right"></i></button>
+                <h2>📊 Recent Leads</h2>
+                <button className="view-all-btn" onClick={() => setActiveTab('leads')}>
+                  View All <i className="fa-solid fa-arrow-right"></i>
+                </button>
               </div>
               <div className="recent-grid">
                 {leads.slice(0, 6).map(lead => (
@@ -501,6 +710,7 @@ const UserDashboard = () => {
               <div className="scraper-config">
                 <h3>🌍 Scraper Config</h3>
                 <p className="config-subtitle">Enter any city and country to find business leads</p>
+                
                 <div className="form-group">
                   <label>City *</label>
                   <input type="text" name="city" value={scraperData.city} onChange={handleScraperChange} placeholder="e.g., Lahore, Dubai" />
@@ -517,16 +727,23 @@ const UserDashboard = () => {
                   <label>Max Results</label>
                   <input type="number" name="maxResults" value={scraperData.maxResults} onChange={handleScraperChange} min="5" max="50" />
                 </div>
+
                 <div className="quick-niches">
                   <span>Quick:</span>
                   {['Dental Clinic', 'IT Company', 'Restaurant', 'Law Firm', 'Hotel', 'Hospital'].map(niche => (
                     <button key={niche} onClick={() => quickNiche(niche)} className="niche-btn">{niche}</button>
                   ))}
                 </div>
+
                 <button onClick={runScraper} className="scraper-btn" disabled={scraping}>
-                  {scraping ? <><i className="fa-solid fa-spinner fa-spin"></i> Scraping...</> : <><i className="fa-solid fa-play"></i> Run Scraper</>}
+                  {scraping ? (
+                    <><i className="fa-solid fa-spinner fa-spin"></i> Scraping...</>
+                  ) : (
+                    <><i className="fa-solid fa-play"></i> Run Scraper</>
+                  )}
                 </button>
               </div>
+
               <div className="scraper-results">
                 <div className="results-header">
                   <h3><i className="fa-solid fa-list-ul"></i> Live Results</h3>
@@ -545,12 +762,20 @@ const UserDashboard = () => {
                         <div className="result-info">
                           <div className="card-title-row">
                             <div className="icon-box"><i className="fa-solid fa-building"></i></div>
-                            <h4>{lead.companyName || 'Unknown Business'}{lead.rating && <span className="rating-tag">⭐ {lead.rating}</span>}</h4>
+                            <h4>
+                              {lead.companyName || 'Unknown Business'}
+                              {lead.rating && <span className="rating-tag">⭐ {lead.rating}</span>}
+                            </h4>
                           </div>
                           {(lead.address || lead.city) && (
                             <div className="data-row">
                               <i className="fa-solid fa-location-dot location-icon"></i>
-                              <p className="address-text">{lead.address || ''}{lead.address && lead.city ? ', ' : ''}{lead.city || ''}{lead.country ? `, ${lead.country}` : ''}</p>
+                              <p className="address-text">
+                                {lead.address || ''}
+                                {lead.address && lead.city ? ', ' : ''}
+                                {lead.city || ''}
+                                {lead.country ? `, ${lead.country}` : ''}
+                              </p>
                             </div>
                           )}
                           <div className="contact-info-grid">
@@ -563,7 +788,9 @@ const UserDashboard = () => {
                             {lead.website && (
                               <div className="data-row">
                                 <i className="fa-solid fa-globe contact-icon"></i>
-                                <a href={lead.website} target="_blank" rel="noopener noreferrer" className="website-link">{lead.website}</a>
+                                <a href={lead.website} target="_blank" rel="noopener noreferrer" className="website-link">
+                                  {getCleanWebsite(lead.website)}
+                                </a>
                               </div>
                             )}
                           </div>
@@ -592,13 +819,14 @@ const UserDashboard = () => {
               </div>
               <div className="leads-actions">
                 <span className="leads-count">
-                  <i className="fa-solid fa-users"></i> {leads.filter(l => l.isSaved).length} Saved Leads
+                  <i className="fa-solid fa-users"></i> {leads.filter(l => l.isSaved).length} Saved / {leads.length} Total
                 </span>
                 <button onClick={exportPDF} className="export-btn">
-                  <i className="fa-solid fa-file-pdf"></i> Export PDF
+                  <i className="fa-solid fa-download"></i> Download PDF
                 </button>
               </div>
             </div>
+
             <div className="leads-grid">
               {filteredLeads.length === 0 ? (
                 <div className="empty-state">
@@ -629,28 +857,31 @@ const UserDashboard = () => {
                       {lead.website && (
                         <p className="website-row">
                           <i className="fa-solid fa-globe"></i> 
-                          <a href={lead.website} target="_blank" rel="noopener noreferrer" className="clean-link">
-                            Visit Website
+                          <a 
+                            href={getWebsiteHref(lead.website)} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="clean-link"
+                            title={lead.website}
+                          >
+                            {getCleanWebsite(lead.website)}
                           </a>
                         </p>
                       )}
                     </div>
                     <div className="lead-card-actions">
                       {lead.isSaved ? (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleUnsaveLead(lead._id); }} 
-                          className="unsave-btn"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); handleUnsaveLead(lead._id); }} className="unsave-btn">
                           <i className="fa-solid fa-bookmark"></i> Saved
                         </button>
                       ) : (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleSaveLead(lead._id); }} 
-                          className="save-btn"
-                        >
+                        <button onClick={(e) => { e.stopPropagation(); handleSaveLead(lead._id); }} className="save-btn">
                           <i className="fa-regular fa-bookmark"></i> Save
                         </button>
                       )}
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteLead(lead._id); }} className="delete-btn-small">
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
                       <span className="click-hint">
                         <i className="fa-solid fa-arrow-up-right-from-square"></i> Click to view
                       </span>
@@ -658,6 +889,135 @@ const UserDashboard = () => {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ===== ANALYTICS TAB ===== */}
+        {activeTab === 'analytics' && (
+          <div className="tab-content analytics-tab">
+            <div className="analytics-header">
+              <h2>📊 Analytics Dashboard</h2>
+              <p className="analytics-subtitle">
+                Real-time insights from {analytics.totalLeads} leads in your database
+              </p>
+            </div>
+
+            <div className="analytics-summary-grid">
+              <div className="analytics-summary-card">
+                <div className="summary-icon"><i className="fa-solid fa-database"></i></div>
+                <div className="summary-info">
+                  <h3>{analytics.totalLeads}</h3>
+                  <p>Total Leads</p>
+                </div>
+              </div>
+              <div className="analytics-summary-card">
+                <div className="summary-icon"><i className="fa-solid fa-bookmark"></i></div>
+                <div className="summary-info">
+                  <h3>{analytics.savedLeads}</h3>
+                  <p>Saved Leads</p>
+                </div>
+              </div>
+              <div className="analytics-summary-card">
+                <div className="summary-icon"><i className="fa-solid fa-flag"></i></div>
+                <div className="summary-info">
+                  <h3>{analytics.countryData.length}</h3>
+                  <p>Countries</p>
+                </div>
+              </div>
+              <div className="analytics-summary-card">
+                <div className="summary-icon"><i className="fa-solid fa-tags"></i></div>
+                <div className="summary-info">
+                  <h3>{analytics.industryData.length}</h3>
+                  <p>Industries</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="analytics-grid">
+              <div className="analytics-card">
+                <h3>🌍 Leads by Country</h3>
+                {analytics.countryData.length === 0 ? (
+                  <p className="no-data">No data yet. Start scraping to see analytics!</p>
+                ) : (
+                  <div className="chart-container">
+                    {analytics.countryData.map((item, idx) => {
+                      const max = Math.max(...analytics.countryData.map(d => d.value));
+                      const pct = max > 0 ? Math.round((item.value / max) * 100) : 0;
+                      const colors = ['#7c3aed', '#f59e0b', '#14b8a6', '#ec4899', '#fbbf24', '#34d399'];
+                      return (
+                        <div key={idx} className="chart-bar">
+                          <span className="chart-label">{item.name}</span>
+                          <div className="bar-track">
+                            <div className="bar-fill" style={{ width: `${Math.max(pct, 10)}%`, background: colors[idx % colors.length] }}>
+                              <span className="bar-label">{item.value}</span>
+                            </div>
+                          </div>
+                          <span className="chart-percent">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="analytics-card">
+                <h3>🏢 Leads by Industry</h3>
+                {analytics.industryData.length === 0 ? (
+                  <p className="no-data">No data yet. Start scraping to see analytics!</p>
+                ) : (
+                  <div className="chart-container">
+                    {analytics.industryData.map((item, idx) => {
+                      const max = Math.max(...analytics.industryData.map(d => d.value));
+                      const pct = max > 0 ? Math.round((item.value / max) * 100) : 0;
+                      const colors = ['#7c3aed', '#f59e0b', '#14b8a6', '#ec4899', '#fbbf24', '#34d399'];
+                      return (
+                        <div key={idx} className="chart-bar">
+                          <span className="chart-label">{item.name}</span>
+                          <div className="bar-track">
+                            <div className="bar-fill" style={{ width: `${Math.max(pct, 10)}%`, background: colors[idx % colors.length] }}>
+                              <span className="bar-label">{item.value}</span>
+                            </div>
+                          </div>
+                          <span className="chart-percent">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="analytics-grid-second">
+              <div className="analytics-card full-width">
+                <h3>📌 Leads by Status</h3>
+                {analytics.statusData.length === 0 ? (
+                  <p className="no-data">No data yet. Start scraping to see analytics!</p>
+                ) : (
+                  <div className="status-chart">
+                    {analytics.statusData.map((item, idx) => {
+                      const statusColors = {
+                        'new': '#7c3aed',
+                        'contacted': '#f59e0b',
+                        'qualified': '#14b8a6',
+                        'lost': '#ef4444'
+                      };
+                      const color = statusColors[item.name.toLowerCase()] || '#7c3aed';
+                      const total = analytics.statusData.reduce((sum, d) => sum + d.value, 0);
+                      const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                      return (
+                        <div key={idx} className="status-item">
+                          <span className="status-name">
+                            <span className="status-dot-color" style={{ background: color }}></span> {item.name}
+                          </span>
+                          <span className="status-count">{item.value}</span>
+                          <span className="status-pct">{pct}%</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -695,15 +1055,36 @@ const UserDashboard = () => {
                   <form onSubmit={handleUpdatePassword}>
                     <div className="settings-field">
                       <label>Current Password</label>
-                      <input type="password" name="currentPassword" value={passwordData.currentPassword} onChange={handlePasswordChange} placeholder="Enter current password" required />
+                      <input 
+                        type="password" 
+                        name="currentPassword" 
+                        value={passwordData.currentPassword} 
+                        onChange={handlePasswordChange} 
+                        placeholder="Enter current password" 
+                        required 
+                      />
                     </div>
                     <div className="settings-field">
                       <label>New Password</label>
-                      <input type="password" name="newPassword" value={passwordData.newPassword} onChange={handlePasswordChange} placeholder="Enter new password (min 6 chars)" required />
+                      <input 
+                        type="password" 
+                        name="newPassword" 
+                        value={passwordData.newPassword} 
+                        onChange={handlePasswordChange} 
+                        placeholder="Enter new password (min 6 chars)" 
+                        required 
+                      />
                     </div>
                     <div className="settings-field">
                       <label>Confirm New Password</label>
-                      <input type="password" name="confirmPassword" value={passwordData.confirmPassword} onChange={handlePasswordChange} placeholder="Confirm new password" required />
+                      <input 
+                        type="password" 
+                        name="confirmPassword" 
+                        value={passwordData.confirmPassword} 
+                        onChange={handlePasswordChange} 
+                        placeholder="Confirm new password" 
+                        required 
+                      />
                     </div>
                     <button type="submit" className="settings-save-btn">
                       <i className="fa-solid fa-save"></i> Update Password
@@ -722,6 +1103,7 @@ const UserDashboard = () => {
             </div>
           </div>
         )}
+
       </main>
     </div>
   );

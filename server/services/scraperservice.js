@@ -40,7 +40,6 @@ class ScraperService {
 
       console.log(`🔍 Searching: ${query}`);
 
-      // Direct Google Maps Search URL
       const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
       await page.goto(searchUrl, {
         waitUntil: 'domcontentloaded',
@@ -49,7 +48,6 @@ class ScraperService {
 
       await page.waitForTimeout(5000);
 
-      // Scroll to load more results
       for (let i = 0; i < 5; i++) {
         await page.evaluate(() => {
           const container = document.querySelector('div[role="feed"]');
@@ -64,7 +62,6 @@ class ScraperService {
 
       await page.waitForTimeout(3000);
 
-      // Find business cards
       let cards = [];
       const selectors = [
         'div[role="article"]',
@@ -83,24 +80,18 @@ class ScraperService {
       }
 
       if (cards.length === 0) {
-        console.log('⚠️ No results found. Trying alternative method...');
+        console.log('⚠️ No results found.');
         await page.close();
         return results;
       }
 
-      // Scrape each card
       for (let i = 0; i < Math.min(cards.length, maxResults); i++) {
         try {
           const card = cards[i];
-
-          // Get business name
+          
+          // ===== GET BUSINESS NAME =====
           let name = '';
-          const nameSelectors = [
-            'div.fontHeadlineSmall',
-            'h3',
-            'div[class*="title"]',
-            'div[role="heading"]'
-          ];
+          const nameSelectors = ['div.fontHeadlineSmall', 'h3', 'div[class*="title"]', 'div[role="heading"]'];
           for (const selector of nameSelectors) {
             const el = await card.$(selector);
             if (el) {
@@ -117,13 +108,9 @@ class ScraperService {
 
           if (!name || !name.trim()) continue;
 
-          // Get address
+          // ===== GET ADDRESS =====
           let address = '';
-          const addressSelectors = [
-            'div.fontBodySmall',
-            'div[class*="address"]',
-            'div[class*="location"]'
-          ];
+          const addressSelectors = ['div.fontBodySmall', 'div[class*="address"]', 'div[class*="location"]'];
           for (const selector of addressSelectors) {
             const el = await card.$(selector);
             if (el) {
@@ -132,27 +119,36 @@ class ScraperService {
             }
           }
 
-          // Get phone
+          // ===== GET PHONE - IMPROVED =====
           let phone = '';
+          // Try multiple selectors for phone
           const phoneSelectors = [
             'div[aria-label*="Phone"]',
             'button[data-item-id*="phone"]',
-            'span[class*="phone"]'
+            'span[class*="phone"]',
+            'div[class*="phone"]',
+            'div[aria-label*="Call"]',
+            'a[href*="tel:"]'
           ];
           for (const selector of phoneSelectors) {
             const el = await card.$(selector);
             if (el) {
-              phone = await el.innerText();
-              if (phone && phone.trim()) break;
+              let phoneText = await el.innerText();
+              if (phoneText) {
+                // Clean phone number
+                phone = phoneText.replace(/[^0-9+\-() ]/g, '').trim();
+                if (phone) break;
+              }
             }
           }
 
-          // Get website
+          // ===== GET WEBSITE =====
           let website = '';
           const websiteSelectors = [
             'a[aria-label*="Website"]',
             'a[data-item-id*="website"]',
-            'a[href*="http"]'
+            'a[href*="http"]',
+            'div[class*="website"] a'
           ];
           for (const selector of websiteSelectors) {
             const el = await card.$(selector);
@@ -162,20 +158,44 @@ class ScraperService {
             }
           }
 
+          // ===== GET EMAIL (Try to find from website) =====
+          let email = '';
+          // Try to find email from the card text
+          const cardText = await card.innerText();
+          const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+          const emailMatch = cardText.match(emailRegex);
+          if (emailMatch) {
+            email = emailMatch[0];
+          }
+
+          // ===== GET RATING =====
+          let rating = '';
+          const ratingSelectors = ['span[aria-hidden*="stars"]', 'span[class*="star"]', 'div[class*="rating"]'];
+          for (const selector of ratingSelectors) {
+            const el = await card.$(selector);
+            if (el) {
+              rating = await el.innerText();
+              if (rating && rating.trim()) break;
+            }
+          }
+
           results.push({
             companyName: name.trim(),
             address: address ? address.trim() : '',
-            phone: phone ? phone.trim() : '',
+            phone: phone ? phone.trim() : '',          // <-- Phone saved
             website: website ? website.trim() : '',
-            email: '',
+            email: email ? email.trim() : '',          // <-- Email saved
             industry: businessType,
             city: city,
             country: country || '',
+            rating: rating ? rating.trim() : '',
             status: 'new',
-            source: 'google_maps'
+            source: 'google_maps',
+            sourceUrl: searchUrl
           });
 
-          console.log(`✅ Scraped: ${name.trim()}`);
+          console.log(`✅ Scraped: ${name.trim()} | Phone: ${phone || 'N/A'} | Email: ${email || 'N/A'}`);
+
         } catch (err) {
           console.warn('⚠️ Error scraping card:', err.message);
         }
@@ -184,6 +204,7 @@ class ScraperService {
       await page.close();
       console.log(`✅ Total scraped: ${results.length} leads`);
       return results;
+
     } catch (error) {
       console.error('❌ Scraper Error:', error.message);
       await page.close();

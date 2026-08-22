@@ -268,7 +268,6 @@ const AdminDashboard = () => {
            =========================================== */}
         {activeTab === 'dashboard' && (
           <div className="admin-tab-content">
-            {/* Stats Grid */}
             <div className="admin-stats-grid">
               <div className="admin-stat-card glass-purple">
                 <div className="admin-stat-icon"><i className="fa-solid fa-users"></i></div>
@@ -300,7 +299,6 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Recent Activity */}
             <div className="admin-recent-grid">
               <div className="admin-recent-card">
                 <h2><i className="fa-solid fa-user-plus"></i> Recent Users</h2>
@@ -341,7 +339,6 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Recent Leads */}
             <div className="admin-recent-leads">
               <h2><i className="fa-solid fa-building"></i> Recent Leads</h2>
               <div className="admin-recent-leads-grid">
@@ -434,7 +431,7 @@ const AdminDashboard = () => {
         )}
 
         {/* ===========================================
-            TAB: LEADS (LIVE DATA)
+            TAB: LEADS (CLEAN VERSION)
            =========================================== */}
         {activeTab === 'leads' && (
           <div className="admin-tab-content">
@@ -456,18 +453,57 @@ const AdminDashboard = () => {
                 filteredLeads.map(lead => (
                   <div key={lead._id} className="admin-lead-card">
                     <div className="admin-lead-header">
-                      <h3><i className="fa-solid fa-building"></i> {lead.companyName || 'Unknown'}</h3>
-                      <span className={`lead-status ${lead.status || 'new'}`}>{lead.status || 'New'}</span>
+                      <h3>
+                        <i className="fa-solid fa-building"></i> 
+                        {lead.companyName || 'Unknown'}
+                      </h3>
+                      <span className={`lead-status ${lead.status || 'new'}`}>
+                        {lead.status || 'New'}
+                      </span>
                     </div>
+                    
                     <div className="admin-lead-body">
-                      <p><i className="fa-solid fa-tag"></i> {lead.industry || 'N/A'}</p>
-                      <p><i className="fa-solid fa-location-dot"></i> {lead.city || 'N/A'}, {lead.country || 'N/A'}</p>
-                      {lead.email && <p><i className="fa-solid fa-envelope"></i> {lead.email}</p>}
-                      {lead.phone && <p><i className="fa-solid fa-phone"></i> {lead.phone}</p>}
-                      {lead.website && <p><i className="fa-solid fa-globe"></i> <a href={lead.website} target="_blank" rel="noopener noreferrer">{lead.website}</a></p>}
+                      {lead.industry && (
+                        <p><i className="fa-solid fa-tag"></i> {lead.industry}</p>
+                      )}
+                      
+                      {lead.city && (
+                        <p><i className="fa-solid fa-location-dot"></i> {lead.city}{lead.country ? `, ${lead.country}` : ''}</p>
+                      )}
+                      
+                      {lead.email && (
+                        <p><i className="fa-solid fa-envelope"></i> {lead.email}</p>
+                      )}
+                      
+                      {lead.phone && (
+                        <p><i className="fa-solid fa-phone"></i> {lead.phone}</p>
+                      )}
+                      
+                      {lead.website && (
+                        <p className="website-row">
+                          <i className="fa-solid fa-globe"></i> 
+                          <a 
+                            href={lead.website} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="clean-website-link"
+                            title={lead.website}
+                          >
+                            {lead.website
+                              .replace(/^https?:\/\//, '')
+                              .replace(/www\./, '')
+                              .split('/')[0]
+                              .substring(0, 35)}
+                          </a>
+                        </p>
+                      )}
                     </div>
+                    
                     <div className="admin-lead-actions">
-                      <button onClick={() => handleDeleteLead(lead._id)} className="action-btn delete">
+                      <button 
+                        onClick={() => handleDeleteLead(lead._id)} 
+                        className="action-btn delete"
+                      >
                         <i className="fa-solid fa-trash"></i> Delete
                       </button>
                     </div>

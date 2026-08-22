@@ -14,13 +14,16 @@ exports.runScraper = async (req, res) => {
     }
 
     console.log(`🚀 Starting scraper for: ${businessType} in ${city}, ${country || 'Any'}`);
+    console.log(`📊 Max Results: ${maxResults}`);
 
     const leadsData = await scraperService.scrapeBusinesses({
       city,
       country,
       businessType,
-      maxResults: parseInt(maxResults)
+      maxResults: parseInt(maxResults) || 10
     });
+
+    console.log(`📊 Scraper returned ${leadsData?.length || 0} leads`);
 
     if (!leadsData || leadsData.length === 0) {
       return res.status(404).json({
@@ -30,35 +33,49 @@ exports.runScraper = async (req, res) => {
     }
 
     const savedLeads = [];
-    for (const lead of leadsData) {
-      const existing = await Lead.findOne({
-        companyName: lead.companyName,
-        city: lead.city
-      });
+    const skippedLeads = [];
 
-      if (!existing) {
-        const newLead = await Lead.create({
+    for (const lead of leadsData) {
+      try {
+        const existing = await Lead.findOne({
           companyName: lead.companyName,
-          email: lead.email || '',
-          phone: lead.phone || '',
-          website: lead.website || '',
-          industry: businessType,
-          status: 'new',
-          notes: lead.address || '',
-          city: lead.city,
-          country: lead.country || '',
-          rating: lead.rating || '',
-          source: 'google_maps',
-          createdBy: req.user.id,
-          isSaved: false,
-          savedBy: []
+          city: lead.city
         });
-        savedLeads.push(newLead);
-      } else {
-        if (lead.phone && !existing.phone) existing.phone = lead.phone;
-        if (lead.website && !existing.website) existing.website = lead.website;
-        await existing.save();
-        savedLeads.push(existing);
+
+        if (!existing) {
+          // ===== SAVE WITH EMAIL AND PHONE =====
+          const newLead = await Lead.create({
+            companyName: lead.companyName || 'Unknown',
+            email: lead.email || '',           // <-- Email save ho raha hai
+            phone: lead.phone || '',           // <-- Phone save ho raha hai
+            website: lead.website || '',
+            industry: businessType,
+            status: 'new',
+            notes: lead.address || '',
+            city: lead.city || city,
+            country: lead.country || country || '',
+            rating: lead.rating || '',
+            source: 'google_maps',
+            sourceUrl: lead.sourceUrl || '',
+            createdBy: req.user.id,
+            isSaved: false,
+            savedBy: []
+          });
+          savedLeads.push(newLead);
+          console.log(`💾 Saved: ${lead.companyName} | Email: ${lead.email || 'N/A'} | Phone: ${lead.phone || 'N/A'}`);
+        } else {
+          // Update existing lead with new info
+          if (lead.phone && !existing.phone) existing.phone = lead.phone;
+          if (lead.website && !existing.website) existing.website = lead.website;
+          if (lead.email && !existing.email) existing.email = lead.email;
+          if (lead.rating && !existing.rating) existing.rating = lead.rating;
+          await existing.save();
+          savedLeads.push(existing);
+          console.log(`🔄 Updated: ${lead.companyName}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error saving lead: ${lead.companyName}`, error.message);
+        skippedLeads.push(lead.companyName);
       }
     }
 
@@ -70,12 +87,17 @@ exports.runScraper = async (req, res) => {
       ipAddress: req.ip
     });
 
+    console.log(`✅ Saved: ${savedLeads.length} leads, Skipped: ${skippedLeads.length}`);
+
     res.json({
       success: true,
       message: `✅ Successfully scraped ${savedLeads.length} leads`,
       count: savedLeads.length,
+      saved: savedLeads.length,
+      skipped: skippedLeads.length,
       leads: savedLeads
     });
+
   } catch (error) {
     console.error('❌ Scraper Error:', error);
     await scraperService.close();
